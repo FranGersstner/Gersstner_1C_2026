@@ -1,6 +1,11 @@
+/**
+ * @file main.c
+ * @brief Implementación de un medidor de distancia por ultrasonido con FreeRTOS
+ */
+
 /*! @mainpage Medidor de distancia por ultrasonido
  *
- * @section genDesc General Description
+ * @section genDesc Descripción General
  *
  * El sistema mide distancia utilizando un sensor ultrasónico HC-SR04.
  * La distancia obtenida se utiliza para:
@@ -15,13 +20,20 @@
  *
  * @section funcionamiento Funcionamiento
  *
- * Máquina de estados:
+ * El sistema se basa en una máquina de estados:
  *
  * - IDLE: sistema detenido, display apagado
- * - MEDIR: mide cada 1 segundo
- * - HOLD: mantiene el último valor medido
+ * - MEDIR: realiza una medición cada 1 segundo
+ * - HOLD: mantiene el último valor medido sin actualizarlo
  *
- * @section hardConn Hardware Connection
+ * @section timing Temporización
+ *
+ * El sistema realiza una medición cada 1 segundo utilizando un contador
+ * basado en un período de ejecución de 50 ms. Esto evita lecturas continuas
+ * del sensor y permite una visualización estable del valor, facilitando
+ * la función HOLD.
+ *
+ * @section hardConn Conexión de Hardware
  *
  * | EDU-ESP | PERIFÉRICO |
  * |---------|------------|
@@ -33,14 +45,14 @@
  * @section ledsControl Control de LEDs
  *
  * - d < 10 cm      → todos apagados
- * - 10 ≤ d < 20 cm → LED_1
- * - 20 ≤ d ≤ 30 cm → LED_1 + LED_2
- * - d > 30 cm      → LED_1 + LED_2 + LED_3
+ * - 10 ≤ d < 20 cm → LED_1 encendido
+ * - 20 ≤ d ≤ 30 cm → LED_1 y LED_2 encendidos
+ * - d > 30 cm      → LED_1, LED_2 y LED_3 encendidos
  *
  * @section tasks Tareas FreeRTOS
  *
  * - TareaTeclas: lectura de botones y cambio de estado
- * - TareaMedicion: medición, display y LEDs
+ * - TareaMedicion: medición, control de LEDs y display
  *
  * @author Gersstner Francisco
  */
@@ -59,52 +71,78 @@
 
 /*==================[macros and definitions]=================================*/
 
+/** @brief Período del loop principal en milisegundos */
 #define LOOP_DELAY_MS 50
+
+/** @brief Cantidad de ciclos necesarios para alcanzar 1 segundo */
 #define REFRESH_TICKS (1000 / LOOP_DELAY_MS)
 
+/** @brief Prioridad de la tarea de teclas */
 #define PRIORIDAD_1 5
+
+/** @brief Prioridad de la tarea de medición */
 #define PRIORIDAD_2 4
 
+/** @brief Memoria asignada a la tarea de teclas */
 #define MEMORIA_DISPONIBLE_1 1024
+
+/** @brief Memoria asignada a la tarea de medición */
 #define MEMORIA_DISPONIBLE_2 2048
 
 /*==================[internal data definition]===============================*/
 
+/**
+ * @brief Estados del sistema
+ */
 typedef enum{
-    IDLE,
-    MEDIR,
-    HOLD
+    IDLE,   /**< Sistema detenido */
+    MEDIR,  /**< Sistema midiendo */
+    HOLD    /**< Valor congelado */
 } estado_t;
 
+/** @brief Estado actual del sistema */
 static volatile estado_t estado = IDLE;
+
+/** @brief Última distancia medida en centímetros */
 static volatile uint16_t distancia = 0;
 
 /*==================[internal functions declaration]=========================*/
 
 /**
  * @brief Actualiza el estado de los LEDs según la distancia
- * @param d Distancia en cm
+ *
+ * @param d Distancia medida en centímetros
  */
 void actualizar_leds(uint16_t d);
 
 /**
- * @brief Tarea de lectura de teclas
- * @param pvParameter No utilizado
+ * @brief Tarea encargada de la lectura de teclas
+ *
+ * Detecta eventos de presión mediante flanco de subida y actualiza
+ * el estado del sistema.
+ *
+ * @param pvParameter Parámetro de la tarea (no utilizado)
  */
 void TareaTeclas(void *pvParameter);
 
 /**
- * @brief Tarea de medición y control del sistema
- * @param pvParameter No utilizado
+ * @brief Tarea encargada de la medición y control del sistema
+ *
+ * Ejecuta la máquina de estados, realiza mediciones periódicas y
+ * actualiza el display y los LEDs.
+ *
+ * @param pvParameter Parámetro de la tarea (no utilizado)
  */
 void TareaMedicion(void *pvParameter);
 
 /*==================[external functions definition]==========================*/
 
 /**
- * @brief Función principal
+ * @brief Punto de entrada del programa
  *
- * Inicializa periféricos y crea tareas FreeRTOS
+ * Inicializa los periféricos y crea las tareas bajo FreeRTOS.
+ *
+ * @return void
  */
 void app_main(void){
 
@@ -120,10 +158,10 @@ void app_main(void){
 /*==================[tasks definition]=======================================*/
 
 /**
- * @brief Tarea que lee teclas y actualiza estado
+ * @brief Tarea de lectura de teclas
  *
- * - TEC1: IDLE ↔ MEDIR
- * - TEC2: MEDIR ↔ HOLD
+ * - TEC1: alterna entre IDLE y MEDIR
+ * - TEC2: alterna entre MEDIR y HOLD
  */
 void TareaTeclas(void *pvParameter){
 
@@ -157,12 +195,10 @@ void TareaTeclas(void *pvParameter){
 /*------------------------------------------------*/
 
 /**
- * @brief Tarea que ejecuta la medición y controla salidas
+ * @brief Tarea de medición y control
  *
- * Máquina de estados:
- * - IDLE: apaga display y LEDs
- * - MEDIR: mide cada 1 segundo
- * - HOLD: mantiene el valor
+ * Implementa la máquina de estados del sistema y realiza una medición
+ * cada 1 segundo cuando el sistema se encuentra en estado MEDIR.
  */
 void TareaMedicion(void *pvParameter){
 
@@ -204,8 +240,9 @@ void TareaMedicion(void *pvParameter){
 /*==================[internal functions definition]==========================*/
 
 /**
- * @brief Control de LEDs según distancia
- * @param d Distancia en cm
+ * @brief Controla los LEDs según la distancia medida
+ *
+ * @param d Distancia en centímetros
  */
 void actualizar_leds(uint16_t d){
 
