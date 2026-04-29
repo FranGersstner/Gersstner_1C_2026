@@ -1,6 +1,6 @@
 /**
  * @file main.c
- * @brief Medidor de distancia por ultrasonido con FreeRTOS, interrupciones y timers
+ * @brief Implementación de un medidor de distancia por ultrasonido con FreeRTOS e interrupciones
  */
 
 /*! @mainpage Medidor de distancia por ultrasonido
@@ -15,24 +15,20 @@
  * - Permitir iniciar/detener la medición (TEC1)
  * - Permitir congelar el valor medido (HOLD con TEC2)
  *
- * El sistema utiliza:
- * - FreeRTOS (tareas)
- * - Interrupciones (teclas)
- * - Timer por hardware (temporización de medición)
+ * El sistema utiliza FreeRTOS y manejo de interrupciones para las teclas.
  *
  * @section funcionamiento Funcionamiento
  *
  * Máquina de estados:
  *
  * - IDLE: sistema detenido
- * - MEDIR: realiza una medición cada 1 segundo
+ * - MEDIR: realiza medición cada 1 segundo
  * - HOLD: mantiene el último valor medido
  *
  * @section timing Temporización
  *
- * Se utiliza un timer de hardware que genera una interrupción cada 1 segundo.
- * Esta interrupción despierta la tarea de medición mediante notificaciones
- * de FreeRTOS, evitando el uso de delays y mejorando la precisión.
+ * Se utiliza un ciclo de 50 ms para generar un contador que permite
+ * realizar una medición cada 1 segundo.
  *
  * @section hardConn Conexión de Hardware
  *
@@ -42,23 +38,6 @@
  * | GPIO_2  | TRIGGER    |
  * | +5V     | +5V        |
  * | GND     | GND        |
- *
- * @section ledsControl Control de LEDs
- *
- * - d < 10 cm      → todos apagados
- * - 10 ≤ d < 20 cm → LED_1 encendido
- * - 20 ≤ d ≤ 30 cm → LED_1 y LED_2 encendidos
- * - d > 30 cm      → LED_1, LED_2 y LED_3 encendidos
- *
- * @section tasks Tareas FreeRTOS
- *
- * - TareaMedicion: medición, control de LEDs y display
- *
- * @section interrupts Interrupciones
- *
- * - tecla1_isr: cambia entre IDLE y MEDIR
- * - tecla2_isr: cambia entre MEDIR y HOLD
- * - FuncTimer: genera evento periódico de medición
  *
  * @author Gersstner Francisco
  */
@@ -73,64 +52,21 @@
 #include "switch.h"
 #include "hc_sr04.h"
 #include "lcditse0803.h"
-#include "timer_mcu.h"
 #include <stdbool.h>
 
 /*==================[macros and definitions]=================================*/
 
-/** @brief Periodo de medición en microsegundos (1 segundo) */
-#define PERIODO_MEDICION_US 1000000
+/** @brief Período del loop en milisegundos */
+#define LOOP_DELAY_MS 50
 
-/** @brief Prioridad de la tarea de medición */
+/** @brief Cantidad de ciclos para 1 segundo */
+#define REFRESH_TICKS (1000 / LOOP_DELAY_MS)
+
+/** @brief Prioridad de la tarea */
 #define PRIORIDAD_MEDICION 4
 
-/** @brief Memoria asignada a la tarea de medición */
+/** @brief Memoria de la tarea */
 #define STACK_MEDICION 2048
-
-/*==================[internal functions declaration]=========================*/
-
-/**
- * @brief ISR de la tecla 1
- *
- * Alterna entre IDLE y MEDIR
- *
- * @param param Parámetro no utilizado
- */
-void tecla1_isr(void *param);
-
-/**
- * @brief ISR de la tecla 2
- *
- * Alterna entre MEDIR y HOLD
- *
- * @param param Parámetro no utilizado
- */
-void tecla2_isr(void *param);
-
-/**
- * @brief ISR del timer
- *
- * Se ejecuta cada 1 segundo y notifica a la tarea de medición
- *
- * @param param Parámetro no utilizado
- */
-void FuncTimer(void *param);
-
-/**
- * @brief Actualiza el estado de los LEDs según la distancia
- *
- * @param d Distancia en centímetros
- */
-void actualizar_leds(uint16_t d);
-
-/**
- * @brief Tarea principal de medición
- *
- * Espera la notificación del timer y ejecuta la máquina de estados
- *
- * @param pvParameter Parámetro no utilizado
- */
-void TareaMedicion(void *pvParameter);
 
 /*==================[internal data definition]===============================*/
 
@@ -143,78 +79,105 @@ typedef enum{
     HOLD    /**< Valor congelado */
 } estado_t;
 
-/** @brief Estado actual del sistema */
+/** @brief Estado actual */
 static volatile estado_t estado = IDLE;
 
-/** @brief Última distancia medida en centímetros */
+/** @brief Última distancia medida */
 static volatile uint16_t distancia = 0;
 
-/** @brief Handle de la tarea de medición */
-static TaskHandle_t medicion_task_handle = NULL;
+/*==================[internal functions declaration]=========================*/
 
-/** @brief Configuración del timer de medición */
-static timer_config_t timer_medicion = {
-    .timer = TIMER_A,
-    .period = PERIODO_MEDICION_US,
-    .func_p = FuncTimer,
-    .param_p = NULL
-};
+/**
+ * @brief ISR para tecla 1
+ *
+ * Alterna entre IDLE y MEDIR
+ *
+ * @param param Parámetro no utilizado
+ */
+void tecla1_isr(void *param);
+
+/**
+ * @brief ISR para tecla 2
+ *
+ * Alterna entre MEDIR y HOLD
+ *
+ * @param param Parámetro no utilizado
+ */
+void tecla2_isr(void *param);
+
+/**
+ * @brief Actualiza LEDs según distancia
+ *
+ * @param d Distancia en cm
+ */
+void actualizar_leds(uint16_t d);
+
+/**
+ * @brief Tarea principal de medición
+ *
+ * @param pvParameter No utilizado
+ */
+void TareaMedicion(void *pvParameter);
 
 /*==================[external functions definition]==========================*/
 
 /**
  * @brief Función principal
  *
- * Inicializa hardware, configura interrupciones y timers,
- * y crea la tarea de medición.
+ * Inicializa periféricos y configura interrupciones
  */
 void app_main(void){
 
-    /* Inicialización de periféricos */
+    /* Inicialización de hardware */
     LedsInit();
     SwitchesInit();
     LcdItsE0803Init();
     HcSr04Init(GPIO_3, GPIO_2);
 
-    /* Creación de tarea */
-    xTaskCreate(TareaMedicion, "Medicion", STACK_MEDICION, NULL, PRIORIDAD_MEDICION, &medicion_task_handle);
+    /* Crear tarea */
+    xTaskCreate(TareaMedicion, "Medicion", STACK_MEDICION, NULL, PRIORIDAD_MEDICION, NULL);
 
-    /* Configuración de interrupciones de teclas */
+    /* Configuración de interrupciones */
     SwitchActivInt(SWITCH_1, tecla1_isr, NULL);
     SwitchActivInt(SWITCH_2, tecla2_isr, NULL);
-
-    TimerInit(&timer_medicion);
-    TimerStart(timer_medicion.timer);
 }
 
 /*==================[interrupts definition]==================================*/
 
+/**
+ * @brief ISR de tecla 1
+ */
 void tecla1_isr(void *param){
+
     if(estado == IDLE)
         estado = MEDIR;
     else
         estado = IDLE;
 }
 
+/**
+ * @brief ISR de tecla 2
+ */
 void tecla2_isr(void *param){
+
     if(estado == MEDIR)
         estado = HOLD;
     else if(estado == HOLD)
         estado = MEDIR;
 }
 
-void FuncTimer(void *param){
-    vTaskNotifyGiveFromISR(medicion_task_handle, pdFALSE);
-}
-
 /*==================[tasks definition]=======================================*/
 
+/**
+ * @brief Tarea de medición y control
+ *
+ * Implementa la máquina de estados y realiza mediciones periódicas
+ */
 void TareaMedicion(void *pvParameter){
 
-    while(true){
+    uint16_t timer_medicion = 0;
 
-        /* Espera notificación del timer */
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    while(true){
 
         switch(estado){
 
@@ -224,9 +187,17 @@ void TareaMedicion(void *pvParameter){
                 break;
 
             case MEDIR:
-                distancia = HcSr04ReadDistanceInCentimeters();
-                actualizar_leds(distancia);
-                LcdItsE0803Write(distancia);
+                timer_medicion++;
+
+                if(timer_medicion >= REFRESH_TICKS){
+
+                    distancia = HcSr04ReadDistanceInCentimeters();
+
+                    actualizar_leds(distancia);
+                    LcdItsE0803Write(distancia);
+
+                    timer_medicion = 0;
+                }
                 break;
 
             case HOLD:
@@ -234,11 +205,18 @@ void TareaMedicion(void *pvParameter){
                 LcdItsE0803Write(distancia);
                 break;
         }
+
+        vTaskDelay(LOOP_DELAY_MS / portTICK_PERIOD_MS);
     }
 }
 
 /*==================[internal functions definition]==========================*/
 
+/**
+ * @brief Control de LEDs según distancia
+ *
+ * @param d Distancia en cm
+ */
 void actualizar_leds(uint16_t d){
 
     if(d < 10){
