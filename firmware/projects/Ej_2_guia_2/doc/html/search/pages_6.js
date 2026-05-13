@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['por_20ultrasonido_0',['Medidor de distancia por ultrasonido',['../index.html',1,'']]]
+  ['leds_0',['Control de LEDs',['../index.html#ledsControl',1,'']]]
 ];

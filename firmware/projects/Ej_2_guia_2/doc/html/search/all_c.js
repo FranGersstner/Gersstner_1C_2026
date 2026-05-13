@@ -1,5 +1,8 @@
 var searchData=
 [
-  ['readme_2emd_0',['README.md',['../_r_e_a_d_m_e_8md.html',1,'']]],
-  ['refresh_5fticks_1',['REFRESH_TICKS',['../_ej2__guia2_8c.html#a3cff32d7d7af6fd140663517b1cc2e26',1,'Ej2_guia2.c']]]
+  ['tareamedicion_0',['TareaMedicion',['../_ej2__guia2_8c.html#a81158e7f39de560c94fe1dd37f1cb5e4',1,'Ej2_guia2.c']]],
+  ['tareas_20freertos_1',['Tareas FreeRTOS',['../index.html#tasks',1,'']]],
+  ['tecla1_5fisr_2',['tecla1_isr',['../_ej2__guia2_8c.html#afc5741566e9c95218fb40e38b9322ef7',1,'Ej2_guia2.c']]],
+  ['tecla2_5fisr_3',['tecla2_isr',['../_ej2__guia2_8c.html#a9502c2f28b12c12a410ef7c082ea3b36',1,'Ej2_guia2.c']]],
+  ['temporización_4',['Temporización',['../index.html#timing',1,'']]]
 ];

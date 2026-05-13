@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['funcionamiento_0',['Funcionamiento',['../index.html#funcionamiento',1,'']]]
+  ['general_0',['Descripción General',['../index.html#genDesc',1,'']]]
 ];
