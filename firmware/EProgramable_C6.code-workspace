@@ -44,6 +44,18 @@
         },
         {
             "path": "projects/Ej_4_guia_2"
+        },
+        {
+            "path": "projects/Prueba_amplificador"
+        },
+        {
+            "path": "projects/Prueba_filtrado_emg"
+        },
+        {
+            "path": "projects/Prueba_Tira_Neopixel"
+        },
+        {
+            "path": "projects/Prueba_Servo_led"
         }
     ],
     "settings": {
