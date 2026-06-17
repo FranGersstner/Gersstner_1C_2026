@@ -1,0 +1,7 @@
+El sistema desarrollado implementa una plataforma de biofeedback electromiográfico (EMG) orientada a la rehabilitación muscular utilizando un microcontrolador ESP32-C6. La actividad eléctrica muscular es capturada mediante electrodos de superficie, amplificada por una etapa analógica y digitalizada utilizando el conversor analógico-digital integrado.
+
+La señal adquirida es procesada digitalmente mediante eliminación de offset, rectificación de onda completa y filtrado exponencial para obtener una estimación de la intensidad de contracción muscular. A partir de esta información se calcula un porcentaje de fuerza que representa el nivel de activación del músculo monitoreado.
+
+El sistema proporciona retroalimentación en tiempo real a través de tres mecanismos complementarios: una barra visual implementada mediante LEDs NeoPixel, un servomotor SG90 cuya posición es proporcional a la intensidad de la contracción y una interfaz inalámbrica Bluetooth Low Energy que permite visualizar la información desde un dispositivo móvil.
+
+La arquitectura del software se basa en FreeRTOS y emplea tareas independientes para el procesamiento de la señal EMG y para el control de actuadores, permitiendo una ejecución concurrente y eficiente de todas las funcionalidades del sistema. Esta estrategia facilita la escalabilidad del sistema y garantiza una respuesta adecuada para aplicaciones de biofeedback en rehabilitación muscular.
